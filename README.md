@@ -1,4 +1,19 @@
-# wxcloudrun-express
+# Resource-Growth-OS 微信云托管桥接器
+
+这个独立 Express 服务接收微信公众号的 `GET/POST /api/wechat/webhook`，原样转发到
+Resource-Growth-OS 的 Cloudflare Worker，再把结果原样返回。
+
+它不保存微信 AppSecret、Token、EncodingAESKey、用户消息或数据库凭证。
+
+## 云托管环境变量
+
+在云托管服务设置中新增下面的普通环境变量：
+
+```text
+UPSTREAM_WEBHOOK_URL=https://api.32tiehe.bond/api/wechat/webhook
+```
+
+部署成功后，使用云托管的公网 HTTPS 域名加上 `/api/wechat/webhook` 作为公众号消息推送 URL。
 
 [![GitHub license](https://img.shields.io/github/license/WeixinCloud/wxcloudrun-express)](https://github.com/WeixinCloud/wxcloudrun-express)
 ![GitHub package.json dependency version (prod)](https://img.shields.io/github/package-json/dependency-version/WeixinCloud/wxcloudrun-express/express)

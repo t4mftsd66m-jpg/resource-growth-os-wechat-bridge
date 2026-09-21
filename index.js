@@ -1,61 +1,65 @@
-const path = require("path");
-const express = require("express");
-const cors = require("cors");
-const morgan = require("morgan");
-const { init: initDB, Counter } = require("./db");
-
-const logger = morgan("tiny");
+const https = require('https');
+const express = require('express');
 
 const app = express();
-app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
-app.use(cors());
-app.use(logger);
+const port = Number(process.env.PORT || 80);
+const maxBodyBytes = 128 * 1024;
+const upstreamWebhookUrl = process.env.UPSTREAM_WEBHOOK_URL;
 
-// 首页
-app.get("/", async (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
-});
+app.use('/api/wechat/webhook', express.raw({ type: '*/*', limit: maxBodyBytes }));
 
-// 更新计数
-app.post("/api/count", async (req, res) => {
-  const { action } = req.body;
-  if (action === "inc") {
-    await Counter.create();
-  } else if (action === "clear") {
-    await Counter.destroy({
-      truncate: true,
+function forwardToResourceGrowthOS(request) {
+  if (!upstreamWebhookUrl) {
+    return Promise.resolve({ status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: Buffer.from('bridge configuration missing') });
+  }
+
+  const target = new URL(upstreamWebhookUrl);
+  const incoming = new URL(request.originalUrl, 'https://bridge.invalid');
+  target.search = incoming.search;
+
+  return new Promise((resolve, reject) => {
+    const body = ['GET', 'HEAD'].includes(request.method) ? null : request.body;
+    const upstreamRequest = https.request(target, {
+      method: request.method,
+      headers: {
+        'content-type': request.get('content-type') || 'application/xml; charset=utf-8',
+        'content-length': body ? Buffer.byteLength(body) : 0,
+        'user-agent': 'Resource-Growth-OS-WeChat-Bridge/1.0'
+      },
+      timeout: 8000
+    }, (upstreamResponse) => {
+      const chunks = [];
+      upstreamResponse.on('data', (chunk) => chunks.push(chunk));
+      upstreamResponse.on('end', () => resolve({
+        status: upstreamResponse.statusCode || 502,
+        headers: upstreamResponse.headers,
+        body: Buffer.concat(chunks)
+      }));
     });
-  }
-  res.send({
-    code: 0,
-    data: await Counter.count(),
-  });
-});
 
-// 获取计数
-app.get("/api/count", async (req, res) => {
-  const result = await Counter.count();
-  res.send({
-    code: 0,
-    data: result,
-  });
-});
-
-// 小程序调用，获取微信 Open ID
-app.get("/api/wx_openid", async (req, res) => {
-  if (req.headers["x-wx-source"]) {
-    res.send(req.headers["x-wx-openid"]);
-  }
-});
-
-const port = process.env.PORT || 80;
-
-async function bootstrap() {
-  await initDB();
-  app.listen(port, () => {
-    console.log("启动成功", port);
+    upstreamRequest.on('timeout', () => upstreamRequest.destroy(new Error('upstream timeout')));
+    upstreamRequest.on('error', reject);
+    if (body) upstreamRequest.write(body);
+    upstreamRequest.end();
   });
 }
 
-bootstrap();
+async function webhook(request, response) {
+  try {
+    const upstreamResponse = await forwardToResourceGrowthOS(request);
+    response.status(upstreamResponse.status)
+      .set('content-type', upstreamResponse.headers['content-type'] || 'text/plain; charset=utf-8')
+      .set('cache-control', 'no-store')
+      .send(upstreamResponse.body);
+  } catch (error) {
+    console.error('wechat_webhook_bridge_upstream_failed', error instanceof Error ? error.message : 'unknown_error');
+    response.status(502).type('text/plain').send('upstream unavailable');
+  }
+}
+
+app.get('/api/wechat/webhook', webhook);
+app.post('/api/wechat/webhook', webhook);
+app.get('/healthz', (_request, response) => response.status(200).json({ status: 'ok' }));
+app.use((_request, response) => response.status(404).type('text/plain').send('Not Found'));
+
+app.listen(port, '0.0.0.0', () => console.log(`wechat webhook bridge listening on ${port}`));
