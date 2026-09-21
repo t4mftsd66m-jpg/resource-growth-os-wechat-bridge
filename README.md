@@ -7,7 +7,7 @@ Resource-Growth-OS 的 Cloudflare Worker，再把结果原样返回。
 
 ## 云托管环境变量
 
-在云托管服务设置中新增下面的普通环境变量：
+默认会转发到正式 Resource-Growth-OS Webhook。需要改用其他环境时，可在云托管服务设置中新增下面的普通环境变量：
 
 ```text
 UPSTREAM_WEBHOOK_URL=https://api.32tiehe.bond/api/wechat/webhook

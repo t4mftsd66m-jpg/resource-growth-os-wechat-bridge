@@ -4,15 +4,13 @@ const express = require('express');
 const app = express();
 const port = Number(process.env.PORT || 80);
 const maxBodyBytes = 128 * 1024;
-const upstreamWebhookUrl = process.env.UPSTREAM_WEBHOOK_URL;
+// This URL is an internal routing target, not a credential. Cloud Hosting can
+// override it with UPSTREAM_WEBHOOK_URL later without a source-code change.
+const upstreamWebhookUrl = process.env.UPSTREAM_WEBHOOK_URL || 'https://api.32tiehe.bond/api/wechat/webhook';
 
 app.use('/api/wechat/webhook', express.raw({ type: '*/*', limit: maxBodyBytes }));
 
 function forwardToResourceGrowthOS(request) {
-  if (!upstreamWebhookUrl) {
-    return Promise.resolve({ status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: Buffer.from('bridge configuration missing') });
-  }
-
   const target = new URL(upstreamWebhookUrl);
   const incoming = new URL(request.originalUrl, 'https://bridge.invalid');
   target.search = incoming.search;
